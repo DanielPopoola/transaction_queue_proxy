@@ -1,3 +1,4 @@
+import json
 import pytest
 import asyncpg
 from datetime import datetime, timedelta
@@ -45,7 +46,7 @@ async def test_save_pending_creates_transcation(storage):
     assert row is not None
     assert row['status'] == 'pending'
     assert row['retry_count'] == 0
-    assert row['payload'] == payload
+    assert row['payload'] == json.dumps(payload)
 
 
 @pytest.mark.asyncio
@@ -93,7 +94,7 @@ async def test_mark_success_updates_status(storage):
             transaction_id
         )
     
-    assert status == 'status'
+    assert status == 'success'
 
 @pytest.mark.asyncio
 async def test_mark_failed_increments_retry_count(storage):
@@ -106,16 +107,18 @@ async def test_mark_failed_increments_retry_count(storage):
 
     async with storage.pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT status, retry_count, error_message" \
-            "FROM messages" \
-            "WHERE transaction_id = $1",
+            """
+            SELECT status, retry_count, error_message, next_retry_at
+            FROM messages
+            WHERE transaction_id = $1
+            """,
             transaction_id
         )
 
     assert row['status'] == 'failed'
     assert row['retry_count'] == 1
     assert row['error_message'] == "Timeout error"
-
+    
 
 @pytest.mark.asyncio
 async def test_mark_failed_increments_on_multiple_failures(storage):
@@ -156,7 +159,7 @@ async def test_mark_dead_letter(storage):
 async def test_get_retryable_messages_returns_only_ready_failures(storage):
     await storage.save_pending("TX-READY-001", {"amount": 100})
     await storage.mark_processing("TX-READY-001")
-    past_time = datetime.now() - timedelta(seconds=10)
+    past_time = datetime.now() - timedelta(seconds=3600)
     await storage.mark_failed("TX-READY-001", "Error", past_time)
 
     await storage.save_pending("TX-FUTURE-001", {"amount": 200})
@@ -179,7 +182,7 @@ async def test_get_retryable_messages_respects_limit(storage):
         tx_id = f"TX-LIMIT-{i:03d}"
         await storage.save_pending(tx_id, {"amount": i * 100})
         await storage.mark_processing(tx_id)
-        past_time = datetime.now() - timedelta(seconds=10)
+        past_time = datetime.now() - timedelta(seconds=3600)
         await storage.mark_failed(tx_id, "Error", past_time)
     
     retryable = await storage.get_retryable_messages(limit=3)

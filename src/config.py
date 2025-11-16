@@ -36,7 +36,7 @@ class Config(BaseSettings):
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
 
-    model_config = SettingsConfigDict(env_file="../env",case_sensitive=False, extra='ignore')
+    model_config = SettingsConfigDict(env_file=".env",case_sensitive=False, extra='ignore')
 
 
 @lru_cache

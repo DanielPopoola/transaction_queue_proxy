@@ -1,4 +1,5 @@
 import asyncpg
+import json
 from datetime import datetime
 
 
@@ -11,10 +12,10 @@ class Storage:
             await conn.execute(
                 """
                 INSERT INTO messages (transaction_id, payload, status)
-                VALUES ($1, $2, 'pending')
+                VALUES ($1, $2::jsonb, 'pending')
                 ON CONFLICT (transaction_id) DO NOTHING
                 """,
-                transaction_id, payload
+                transaction_id, json.dumps(payload)
             )
 
     async def mark_processing(self, transaction_id: str) -> None:
@@ -76,13 +77,21 @@ class Storage:
                 SELECT transaction_id, payload, retry_count
                 FROM messages
                 WHERE status = 'failed'
-                    AND next_retry_at <= NOW()
-                ORDER BY next_retry_at ASC
+                    AND next_retry_at <  NOW()
+                ORDER BY next_retry_at
                 LIMIT $1
                 """,
                 limit
             )
-            return [dict(row) for row in rows]
+            return [
+                {
+                    "transaction_id": row["transaction_id"],
+                    "payload": json.loads(row["payload"]),
+                    "retry_count": row["retry_count"],
+                }
+                for row in rows
+            ]
+
         
     async def recover_crashed_messages(
         self, 
