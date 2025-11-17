@@ -1,33 +1,7 @@
 import json
 import pytest
-import asyncpg
-from datetime import datetime, timedelta
-from src.storage import Storage
-from src.config import get_settings
 
-
-@pytest.fixture
-async def db_pool():
-    config = get_settings()
-
-    pool = await asyncpg.create_pool(
-        host=config.postgres_host,
-        port=config.postgres_port,
-        user=config.postgres_user,
-        password=config.postgres_password,
-        database=f"{config.postgres_db}_test"
-    )
-
-    async with pool.acquire() as conn:
-        await conn.execute("TRUNCATE TABLE messages")
-
-    yield pool
-
-    await pool.close()
-
-@pytest.fixture
-async def storage(db_pool):
-    return Storage(db_pool)
+from datetime import datetime, timedelta, UTC
 
 
 @pytest.mark.asyncio
@@ -102,7 +76,7 @@ async def test_mark_failed_increments_retry_count(storage):
     await storage.save_pending(transaction_id, {"amount": 500})
     await storage.mark_processing(transaction_id)
 
-    next_retry = datetime.now() + timedelta(seconds=60)
+    next_retry = datetime.now(tz=UTC) + timedelta(seconds=60)
     await storage.mark_failed(transaction_id, "Timeout error", next_retry)
 
     async with storage.pool.acquire() as conn:
@@ -127,7 +101,7 @@ async def test_mark_failed_increments_on_multiple_failures(storage):
 
     for i in range(3):
         await storage.mark_processing(transaction_id)
-        next_retry = datetime.now() + timedelta(seconds=60)
+        next_retry = datetime.now(tz=UTC) + timedelta(seconds=60)
         await storage.mark_failed(transaction_id, f"Error {i+1}", next_retry)
 
     async with storage.pool.acquire() as conn:
@@ -159,12 +133,12 @@ async def test_mark_dead_letter(storage):
 async def test_get_retryable_messages_returns_only_ready_failures(storage):
     await storage.save_pending("TX-READY-001", {"amount": 100})
     await storage.mark_processing("TX-READY-001")
-    past_time = datetime.now() - timedelta(seconds=3600)
+    past_time = datetime.now(tz=UTC) - timedelta(seconds=10)
     await storage.mark_failed("TX-READY-001", "Error", past_time)
 
     await storage.save_pending("TX-FUTURE-001", {"amount": 200})
     await storage.mark_processing("TX-FUTURE-001")
-    future_time = datetime.now() + timedelta(seconds=3600)
+    future_time = datetime.now(tz=UTC) + timedelta(seconds=3600)
     await storage.mark_failed("TX-FUTURE-001", "Error", future_time)
     
     await storage.save_pending("TX-SUCCESS-001", {"amount": 300})
@@ -182,7 +156,7 @@ async def test_get_retryable_messages_respects_limit(storage):
         tx_id = f"TX-LIMIT-{i:03d}"
         await storage.save_pending(tx_id, {"amount": i * 100})
         await storage.mark_processing(tx_id)
-        past_time = datetime.now() - timedelta(seconds=3600)
+        past_time = datetime.now(tz=UTC) - timedelta(seconds=10)
         await storage.mark_failed(tx_id, "Error", past_time)
     
     retryable = await storage.get_retryable_messages(limit=3)

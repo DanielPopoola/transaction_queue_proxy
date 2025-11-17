@@ -1,6 +1,7 @@
-import asyncpg
 import json
 from datetime import datetime
+
+import asyncpg
 
 
 class Storage:
@@ -77,7 +78,7 @@ class Storage:
                 SELECT transaction_id, payload, retry_count
                 FROM messages
                 WHERE status = 'failed'
-                    AND next_retry_at <  NOW()
+                    AND next_retry_at <= NOW()
                 ORDER BY next_retry_at
                 LIMIT $1
                 """,
