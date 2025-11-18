@@ -16,6 +16,8 @@ class Config(BaseSettings):
     max_retries: int = Field(5, ge=1)
     base_delay: int = Field(60, ge=0)
     max_delay: int = Field(3600, ge=1)
+    
+    max_concurrent_retries: int = Field(5, ge=1, le=50)
 
     @field_validator("kafka_broker")
     @classmethod

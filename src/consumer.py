@@ -1,12 +1,10 @@
-import logging
 import json
+import logging
+
 from aiokafka import AIOKafkaConsumer
-from aiokafka.errors import KafkaError
 
-
-from src.storage import Storage
 from src.processor import Processor
-
+from src.storage import Storage
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +35,7 @@ class Consumer:
             group_id=self.group_id,
             auto_offset_reset='earliest',
             enable_auto_commit=False,
+            consumer_timeout_ms=1000,
             value_deserializer=lambda m: json.loads(m.decode('utf-8'))
         )
         await self.consumer.start()
@@ -59,19 +58,26 @@ class Consumer:
         logger.info("Beginning message consumption")
 
         try:
-            async for message in self.consumer:
-                if not self.running:
-                    logger.info("Consumer stopping, breaking out of loop")
-                    break
-
-                await self._process_message(message)
-
-        except KafkaError as e:
-            logger.error(f"Kafka error during consumption: {e}")
-            raise
+            while self.running:
+                data = await self.consumer.getmany(timeout_ms=1000, max_records=10)
+                
+                if not data:
+                    continue
+            
+                for _, messages in data.items():
+                    for message in messages:
+                        if not self.running:
+                            logger.info("Stop signal received, finishing current batch")
+                            return
+                        
+                        await self._process_message(message)
+                        await self.consumer.commit()
+                        
         except Exception as e:
-            logger.error(f"Unexpected error during consumption: {e}")
+            logger.error(f"Error during consumption: {e}")
             raise
+        finally:
+            logger.info("Consumer loop exiting")
 
     async def _process_message(self, message):
         try:
