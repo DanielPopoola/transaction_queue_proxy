@@ -46,7 +46,7 @@ This design decouples message ingestion from processing, providing durability an
 ## API Endpoints
 
 - `GET /metrics`: Exposes application and queue metrics in Prometheus format.
-- `GET /status/{message_id}`: Get the current status and details of a specific message.
+- `GET /status`: Get health status of system
 - `POST /replay/{message_id}`: Manually requeue a `failed` or `dead_letter` message for processing.
 
 ## Getting Started
