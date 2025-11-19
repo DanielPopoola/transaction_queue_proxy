@@ -3,7 +3,9 @@ import logging
 import signal
 
 import asyncpg
+import uvicorn
 
+from src.api import create_api
 from src.config import get_settings
 from src.consumer import Consumer
 from src.processor import Processor
@@ -25,6 +27,8 @@ class Application:
         self.processor = None
         self.consumer = None
         self.retry_worker = None
+        self.api_app = None
+        self.api_server = None
         self.shutdown_event = asyncio.Event()
 
     async def startup(self):
@@ -42,6 +46,17 @@ class Application:
         logger.info("Database pool created")
         
         self.storage = Storage(self.pool)
+
+        self.api_app = create_api(self.storage)
+
+        config = uvicorn.Config(
+            self.api_app,
+            host="0.0.0.0",
+            port=8000,
+            log_level="info"
+        )
+        self.api_server = uvicorn.Server(config)
+        logger.info("API server configured on port 8000")
 
         self.processor = Processor(
             storage=self.storage,
@@ -87,6 +102,10 @@ class Application:
         
         if self.pool:
             await self.pool.close()
+
+        if self.api_server:
+            self.api_server.should_exit = True
+            logger.info("API server shutdown initiated")
         
         logger.info("Application shutdown complete")
 
@@ -109,8 +128,12 @@ class Application:
                 self.retry_worker.start(),
                 name="retry-worker"
             )
+            api_task = asyncio.create_task(
+                self.api_server.serve(),
+                name="api-server"
+            )
             
-            await asyncio.gather(consumer_task, retry_task)
+            await asyncio.gather(consumer_task, retry_task, api_task)
             
         except Exception as e:
             logger.error(f"Error in main loop: {e}")
