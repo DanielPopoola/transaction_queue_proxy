@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS messages (
     status VARCHAR(20) NOT NULL DEFAULT 'pending',
     retry_count INTEGER NOT NULL DEFAULT 0,
     error_message TEXT,
-    next_retry_at TIMESTAMP,
+    next_retry_at TIMESTAMPTZ,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
     
