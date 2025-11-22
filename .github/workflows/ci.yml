@@ -51,7 +51,12 @@ jobs:
           PGPASSWORD: testpass
         run: |
           sudo apt-get update && sudo apt-get install -y postgresql-client
-          psql -h localhost -U testuser -d test_db -f schema.sql
+          
+          # 1. Connect to the default 'test_db' to create the NEW 'test_db_test'
+          psql -h localhost -U testuser -d test_db -c "CREATE DATABASE test_db_test;"
+          
+          # 2. Apply the schema specifically to 'test_db_test'
+          psql -h localhost -U testuser -d test_db_test -f schema.sql
 
       - name: Run linter (Ruff)
         run: uv run ruff check src/
