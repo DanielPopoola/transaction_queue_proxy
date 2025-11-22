@@ -3,6 +3,7 @@ import logging
 
 from aiokafka import AIOKafkaConsumer
 
+from src.instrumentation import measure
 from src.processor import Processor
 from src.storage import Storage
 
@@ -92,11 +93,13 @@ class Consumer:
 
 			logger.info(f'Received transaction {transaction_id} from Kafka')
 
-			await self.storage.save_pending(transaction_id, payload)
+			async with measure('consumer_db_save', transaction_id=transaction_id):
+				await self.storage.save_pending(transaction_id, payload)
 
-			await self.processor.process(
-				transaction_id=transaction_id, payload=payload, retry_count=0
-			)
+			async with measure('consumer_process_transaction', transaction_id=transaction_id):
+				await self.processor.process(
+					transaction_id=transaction_id, payload=payload, retry_count=0
+				)
 			await self.consumer.commit()
 			logger.info(f'Committed offset for transaction {transaction_id}')
 

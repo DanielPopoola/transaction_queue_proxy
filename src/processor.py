@@ -3,6 +3,7 @@ import logging
 import httpx
 
 from src.backoff import calculate_next_retry
+from src.instrumentation import measure
 from src.storage import Storage
 
 logger = logging.getLogger(__name__)
@@ -33,24 +34,38 @@ class Processor:
 	async def process(self, transaction_id: str, payload: dict, retry_count: int = 0):
 		logger.info(f'Processing transaction {transaction_id}, attempt {retry_count + 1}')
 
-		await self.storage.mark_processing(transaction_id)
+		async with measure('processor_mark_processing', transaction_id=transaction_id):
+			await self.storage.mark_processing(transaction_id)
 
 		try:
-			response = await self.client.post(
-				self.downstream_url, json={'transaction_id': transaction_id, **payload}
-			)
+			async with measure(
+				'processor_call_downstream', transaction_id=transaction_id, url=self.downstream_url
+			):
+				response = await self.client.post(
+					self.downstream_url, json={'transaction_id': transaction_id, **payload}
+				)
 
-			if 200 <= response.status_code < 300:
-				await self.storage.mark_success(transaction_id)
-				logger.info(f'Transaction {transaction_id} succeeded')
-				return
+				logger.info(
+					'downstream_response_received',
+					extra={
+						'transaction_id': transaction_id,
+						'status_code': response.status_code,
+						'success': 200 <= response.status_code < 300,
+					},
+				)
 
-			await self._handle_error(
-				transaction_id=transaction_id,
-				status_code=response.status_code,
-				error_message=f'Downstream returned {response.status_code}: {response.text}',
-				retry_count=retry_count,
-			)
+				if 200 <= response.status_code < 300:
+					async with measure('processor_mark_succes', transaction_id=transaction_id):
+						await self.storage.mark_success(transaction_id)
+						logger.info(f'Transaction {transaction_id} succeeded')
+						return
+
+				await self._handle_error(
+					transaction_id=transaction_id,
+					status_code=response.status_code,
+					error_message=f'Downstream returned {response.status_code}: {response.text}',
+					retry_count=retry_count,
+				)
 
 		except (httpx.TimeoutException, httpx.ConnectError, httpx.ReadError) as e:
 			logger.warning(f'Transaction {transaction_id} failed with network error: {e}')
@@ -74,16 +89,20 @@ class Processor:
 
 		if not is_transient:
 			logger.error(f'Transaction {transaction_id} dead lettered: {error_message}')
-			await self.storage.mark_dead_letter(transaction_id=transaction_id, error=error_message)
-			return
+			async with measure('processor_mark_dead', transaction_id=transaction_id):
+				await self.storage.mark_dead_letter(
+					transaction_id=transaction_id, error=error_message
+				)
+				return
 
 		if retry_count >= self.max_retries:
 			logger.error(f'Transaction {transaction_id} exhausted retries: {error_message}')
-			await self.storage.mark_dead_letter(
-				transaction_id=transaction_id,
-				error=f'Max retries exceeded. Last error: {error_message}',
-			)
-			return
+			async with measure('processor_mark_dead', transaction_id=transaction_id):
+				await self.storage.mark_dead_letter(
+					transaction_id=transaction_id,
+					error=f'Max retries exceeded. Last error: {error_message}',
+				)
+				return
 
 		next_retry_at = calculate_next_retry(
 			retry_count=retry_count, base_delay=self.base_delay, max_delay=self.max_delay
@@ -94,9 +113,10 @@ class Processor:
 			f'Retry count: {retry_count + 1}/{self.max_retries}'
 		)
 
-		await self.storage.mark_failed(
-			transaction_id=transaction_id, error=error_message, next_retry_at=next_retry_at
-		)
+		async with measure('processor_mark_failed', transaction_id=transaction_id):
+			await self.storage.mark_failed(
+				transaction_id=transaction_id, error=error_message, next_retry_at=next_retry_at
+			)
 
 	def _is_transient_error(self, status_code: int | None) -> bool:
 		if status_code is None:

@@ -1,10 +1,12 @@
 import asyncio
 import logging
 import signal
+import sys
 
 import asyncpg
 import uvicorn
 from aiokafka.errors import KafkaConnectionError
+from pythonjsonlogger import json as json_logger
 
 from src.api import create_api
 from src.config import get_settings
@@ -13,9 +15,11 @@ from src.processor import Processor
 from src.retry_worker import RetryWorker
 from src.storage import Storage
 
-logging.basicConfig(
-	level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+handler = logging.StreamHandler(sys.stdout)
+formatter = json_logger.JsonFormatter('%(asctime)s %(name)s %(levelname)s %(message)s')
+handler.setFormatter(formatter)
+
+logging.basicConfig(level=logging.INFO, handlers=[handler])
 logger = logging.getLogger(__name__)
 
 
