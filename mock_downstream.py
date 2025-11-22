@@ -21,5 +21,9 @@ def process_transaction():
             'message': 'Downstream service temporarily unavailable'
         }), 503  # Service Unavailable
 
+@app.route('/health', methods=['GET'])
+def health_check():
+    return "OK", 200
+
 if __name__ == '__main__':
-    app.run(port=8001, debug=True)
+    app.run(host='0.0.0.0', port=8001, debug=True)

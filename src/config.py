@@ -11,6 +11,8 @@ class Config(BaseSettings):
     postgres_host: str = "localhost"
     postgres_port: int = Field(5432, ge=1, le=65535)
 
+    downstream_url: str = "http://localhost:8001/process" 
+
     kafka_broker: str = Field("localhost:9092", min_length=1)
 
     max_retries: int = Field(5, ge=1)

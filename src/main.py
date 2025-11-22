@@ -4,6 +4,7 @@ import signal
 
 import asyncpg
 import uvicorn
+from aiokafka.errors import KafkaConnectionError
 
 from src.api import create_api
 from src.config import get_settings
@@ -60,7 +61,7 @@ class Application:
 
         self.processor = Processor(
             storage=self.storage,
-            downstream_url="http://localhost:8001/process",
+            downstream_url=self.config.downstream_url,
             max_retries=self.config.max_retries,
             base_delay=self.config.base_delay,
             max_delay=self.config.max_delay
@@ -85,8 +86,28 @@ class Application:
         if recovered > 0:
             logger.warning(f"Recovered {recovered} crashed messages")
         
-        await self.consumer.start()
+        max_retries = 10
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Connecting to Kafka (Attempt {attempt + 1}/{max_retries})...")
+                await self.consumer.start()
+                logger.info("Connected to Kafka successfully.")
+                break
+            except KafkaConnectionError:
+                if attempt == max_retries - 1:
+                    logger.error("Max retries reached. Could not connect to Kafka.")
+                    raise
+                logger.warning("Kafka not ready yet. Retrying in 5 seconds...")
+                await asyncio.sleep(5)
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    raise
+                logger.warning(f"Connection failed: {e}. Retrying in 5 seconds...")
+                await asyncio.sleep(5)
+    
+
         logger.info("Application started successfully")
+
 
     async def shutdown(self):
         logger.info("Shutting down application...")
