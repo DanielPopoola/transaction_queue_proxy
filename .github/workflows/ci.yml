@@ -1,11 +1,14 @@
 name: CI/CD Pipeline
 
-
 on:
   push:
     branches: [master]
   pull_request:
     branches: [master]
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
   test:
@@ -30,18 +33,25 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Install uv
-        run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sh
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --frozen
+
+      - name: Initialize Database Schema
+        env:
+          PGPASSWORD: testpass
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          psql -h localhost -U testuser -d test_db -f schema.sql
 
       - name: Run linter (Ruff)
         run: uv run ruff check src/
@@ -51,11 +61,11 @@ jobs:
 
       - name: Run tests
         env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: transaction_queue_test
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: test_db
           POSTGRES_HOST: localhost
-          POSTGRES_PORT: 5432
+          POSTGRES_PORT: 5432 
         run: uv run pytest -v
 
   build:
