@@ -9,20 +9,15 @@ import uuid
 from contextlib import suppress
 from datetime import UTC, datetime
 
-sys.path.append(os.getcwd())
 
 from aiokafka import AIOKafkaProducer
 
-from src.config import get_settings
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 
 async def run_load_test(rate: int, duration: int, topic: str):
-	settings = get_settings()
-	logger.info(f'Connecting to Kafka at {settings.kafka_broker}...')
-
 	producer = AIOKafkaProducer(
 		bootstrap_servers='localhost:29092',
 		value_serializer=lambda v: json.dumps(v).encode('utf-8'),
