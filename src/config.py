@@ -14,6 +14,7 @@ class Config(BaseSettings):
 	downstream_url: str = 'http://localhost:8001/process'
 
 	kafka_broker: str = Field('localhost:9092', min_length=1)
+	redis_url: str = Field('redis://localhost:6379', description='Redis connection URL')
 
 	max_retries: int = Field(5, ge=1)
 	base_delay: int = Field(60, ge=0)

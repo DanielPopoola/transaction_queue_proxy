@@ -19,6 +19,19 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --appendfsync everysec
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
     environment:
@@ -85,9 +98,11 @@ services:
       MAX_RETRIES: 5
       BASE_DELAY: 60
       MAX_DELAY: 3600
+      REDIS_URL: redis://redis:6379
       MAX_CONCURRENT_RETRIES: 5
       DOWNSTREAM_URL: http://mock_downstream:8001/process
     restart: unless-stopped
 
 volumes:
   postgres_data:
+  redis_data:

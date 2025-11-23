@@ -2,16 +2,12 @@ import argparse
 import asyncio
 import json
 import logging
-import os
-import sys
 import time
 import uuid
 from contextlib import suppress
 from datetime import UTC, datetime
 
-
 from aiokafka import AIOKafkaProducer
-
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)

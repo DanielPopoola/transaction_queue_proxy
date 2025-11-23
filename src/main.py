@@ -31,6 +31,8 @@ class Application:
 		self.processor = None
 		self.consumer = None
 		self.retry_worker = None
+		self.queue = None
+		self.workers = []
 		self.api_app = None
 		self.api_server = None
 		self.shutdown_event = asyncio.Event()
@@ -65,11 +67,18 @@ class Application:
 			max_delay=self.config.max_delay,
 		)
 
+		from src.queue import RedisQueue
+
+		self.queue = RedisQueue(redis_url=self.config.redis_url)
+		await self.queue.connect()
+		logger.info('Redis queue connected')
+
 		self.consumer = Consumer(
 			storage=self.storage,
 			processor=self.processor,
 			kafka_broker=self.config.kafka_broker,
 			topic='transactions.incoming',
+			queue=self.queue,
 		)
 
 		self.retry_worker = RetryWorker(
@@ -83,6 +92,20 @@ class Application:
 		recovered = await self.storage.recover_crashed_messages()
 		if recovered > 0:
 			logger.warning(f'Recovered {recovered} crashed messages')
+
+		from src.worker import Worker
+
+		num_workers = 5
+		for i in range(num_workers):
+			worker = Worker(
+				worker_id=f'worker-{i}',
+				storage=self.storage,
+				processor=self.processor,
+				queue=self.queue,
+				batch_size=1,
+			)
+			self.workers.append(worker)
+		logger.info(f'Created {num_workers} workers')
 
 		max_retries = 10
 		for attempt in range(max_retries):
@@ -111,8 +134,16 @@ class Application:
 		if self.consumer:
 			await self.consumer.stop()
 
+		if self.workers:
+			for worker in self.workers:
+				await worker.stop()
+			logger.info('All workers stopped')
+
 		if self.retry_worker:
 			await self.retry_worker.stop()
+
+		if self.queue:
+			await self.queue.close()
 
 		if self.processor:
 			await self.processor.close()
@@ -138,7 +169,12 @@ class Application:
 			retry_task = asyncio.create_task(self.retry_worker.start(), name='retry-worker')
 			api_task = asyncio.create_task(self.api_server.serve(), name='api-server')
 
-			await asyncio.gather(consumer_task, retry_task, api_task)
+			worker_tasks = [
+				asyncio.create_task(worker.start(), name=f'worker-{i}')
+				for i, worker in enumerate(self.workers)
+			]
+
+			await asyncio.gather(consumer_task, retry_task, api_task, *worker_tasks)
 
 		except Exception as e:
 			logger.error(f'Error in main loop: {e}')
@@ -150,6 +186,10 @@ class Application:
 		self.shutdown_event.set()
 		if self.consumer:
 			self.consumer.running = False
+
+		for worker in self.workers:
+			worker.running = False
+
 		if self.retry_worker:
 			self.retry_worker.running = False
 

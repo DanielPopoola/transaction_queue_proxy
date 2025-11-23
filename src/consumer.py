@@ -5,6 +5,7 @@ from aiokafka import AIOKafkaConsumer
 
 from src.instrumentation import measure
 from src.processor import Processor
+from src.queue import RedisQueue
 from src.storage import Storage
 
 logger = logging.getLogger(__name__)
@@ -17,12 +18,14 @@ class Consumer:
 		processor: Processor,
 		kafka_broker: str,
 		topic: str,
+		queue: RedisQueue,
 		group_id: str = 'transaction-processor-group',
 	):
 		self.storage = storage
 		self.processor = processor
 		self.kafka_broker = kafka_broker
 		self.topic = topic
+		self.queue = queue
 		self.group_id = group_id
 		self.consumer = None
 		self.running = False
@@ -96,10 +99,14 @@ class Consumer:
 			async with measure('consumer_db_save', transaction_id=transaction_id):
 				await self.storage.save_pending(transaction_id, payload)
 
-			async with measure('consumer_process_transaction', transaction_id=transaction_id):
-				await self.processor.process(
-					transaction_id=transaction_id, payload=payload, retry_count=0
-				)
+			async with measure('consumer_redis_push', transaction_id=transaction_id):
+				await self.queue.enqueue(transaction_id)
+
+			#async with measure('consumer_process_transaction', transaction_id=transaction_id):
+				#await self.processor.process(
+					#transaction_id=transaction_id, payload=payload, retry_count=0
+				#)
+				
 			await self.consumer.commit()
 			logger.info(f'Committed offset for transaction {transaction_id}')
 
